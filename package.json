@@ -1,0 +1,36 @@
+{
+  "name": "open-ai-cli",
+  "version": "0.1.0",
+  "description": "Open Codex CLI and Claude Code in Windows Terminal tabs from the current directory.",
+  "type": "module",
+  "bin": {
+    "open-ai-cli": "bin/open-ai-cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "pack:dry-run": "npm pack --dry-run",
+    "publish:dry-run": "npm publish --dry-run"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "codex",
+    "claude",
+    "cli",
+    "terminal",
+    "windows-terminal"
+  ],
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  }
+}
