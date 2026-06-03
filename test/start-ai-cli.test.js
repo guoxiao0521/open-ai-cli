@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { buildWtArgs, getMissingRequirements, isEntrypoint, parseArgs } from '../bin/start-ai-cli.js';
+import {
+  buildMacTerminalArgs,
+  buildMacTerminalScript,
+  buildWtArgs,
+  getMissingRequirements,
+  isEntrypoint,
+  parseArgs
+} from '../bin/start-ai-cli.js';
 
 test('parseArgs handles help and version flags', () => {
   assert.deepEqual(parseArgs(['--help']), { action: 'help' });
@@ -51,8 +58,49 @@ test('buildWtArgs handles a single tab (skipped CLIs scenario)', () => {
   ]);
 });
 
-test('getMissingRequirements rejects non-Windows platforms before PATH checks', () => {
-  assert.deepEqual(getMissingRequirements({ platform: 'linux' }), ['Windows is required.']);
+test('buildMacTerminalScript opens commands in the requested directory', () => {
+  const script = buildMacTerminalScript({
+    cwd: "/Users/test/my project",
+    tabs: [
+      { command: 'codex-test', title: 'Codex' },
+      { command: 'claude-test', title: 'Claude' }
+    ]
+  });
+
+  assert.equal(script, [
+    'tell application "Terminal"',
+    '  activate',
+    '  do script "cd \'/Users/test/my project\' && codex-test"',
+    '  do script "cd \'/Users/test/my project\' && claude-test"',
+    'end tell'
+  ].join('\n'));
+});
+
+test('buildMacTerminalArgs passes the AppleScript to osascript', () => {
+  const args = buildMacTerminalArgs({
+    cwd: "/Users/test/project",
+    tabs: [{ command: 'agent-test', title: 'Cursor' }]
+  });
+
+  assert.deepEqual(args, [
+    '-e',
+    [
+      'tell application "Terminal"',
+      '  activate',
+      '  do script "cd \'/Users/test/project\' && agent-test"',
+      'end tell'
+    ].join('\n')
+  ]);
+});
+
+test('getMissingRequirements rejects unsupported platforms before PATH checks', () => {
+  assert.deepEqual(getMissingRequirements({ platform: 'linux' }), ['Windows or macOS is required.']);
+});
+
+test('getMissingRequirements checks macOS hard requirements', () => {
+  assert.deepEqual(getMissingRequirements({ platform: 'darwin', env: { PATH: '' } }), [
+    'AppleScript runner (osascript) was not found in PATH.'
+  ]);
 });
 
 test('isEntrypoint accepts resolved script paths', () => {

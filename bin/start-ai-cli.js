@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 const COMMAND = 'start-ai-cli';
 
-const HARD_REQUIREMENTS = [
-  { command: 'wt.exe', label: 'Windows Terminal (wt.exe)' }
-];
+const HARD_REQUIREMENTS_BY_PLATFORM = {
+  win32: [{ command: 'wt.exe', label: 'Windows Terminal (wt.exe)' }],
+  darwin: [{ command: 'osascript', label: 'AppleScript runner (osascript)' }]
+};
 
 const CLI_COMMANDS = [
   { command: 'codex', label: 'Codex CLI (codex)', title: 'Codex' },
@@ -22,14 +23,13 @@ const HELP_TEXT = `Usage:
   ${COMMAND} --help
   ${COMMAND} --version
 
-Opens Windows Terminal with three tabs in the current directory:
+Opens terminal tabs/windows in the current directory:
   - Codex: runs "codex"
   - Claude: runs "claude"
   - Cursor: runs "agent"
 
 Requirements:
-  - Windows
-  - Windows Terminal (wt.exe)
+  - Windows with Windows Terminal (wt.exe), or macOS with Terminal.app
   - Codex CLI available as "codex"
   - Claude Code CLI available as "claude"
   - Cursor CLI available as "agent"
@@ -67,8 +67,40 @@ export function buildWtArgs({ cwd, tabs }) {
   return result;
 }
 
-export function commandExists(command, { env = process.env } = {}) {
-  const result = spawnSync('where.exe', [command], {
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function appleScriptQuote(value) {
+  return JSON.stringify(String(value));
+}
+
+export function buildMacTerminalScript({ cwd, tabs }) {
+  const commands = tabs.map(({ command }) => `cd ${shellQuote(cwd)} && ${command}`);
+  const lines = [
+    'tell application "Terminal"',
+    '  activate'
+  ];
+
+  for (const command of commands) {
+    lines.push(`  do script ${appleScriptQuote(command)}`);
+  }
+
+  lines.push('end tell');
+  return lines.join('\n');
+}
+
+export function buildMacTerminalArgs({ cwd, tabs }) {
+  return ['-e', buildMacTerminalScript({ cwd, tabs })];
+}
+
+export function commandExists(command, { env = process.env, platform = process.platform } = {}) {
+  const executable = platform === 'win32' ? 'where.exe' : 'sh';
+  const args = platform === 'win32'
+    ? [command]
+    : ['-lc', `command -v ${shellQuote(command)}`];
+
+  const result = spawnSync(executable, args, {
     env,
     stdio: 'ignore',
     windowsHide: true
@@ -78,27 +110,33 @@ export function commandExists(command, { env = process.env } = {}) {
 }
 
 export function getMissingRequirements({ platform = process.platform, env = process.env } = {}) {
-  if (platform !== 'win32') {
-    return ['Windows is required.'];
+  const requirements = HARD_REQUIREMENTS_BY_PLATFORM[platform];
+  if (!requirements) {
+    return ['Windows or macOS is required.'];
   }
 
-  return HARD_REQUIREMENTS
-    .filter(({ command }) => !commandExists(command, { env }))
+  return requirements
+    .filter(({ command }) => !commandExists(command, { env, platform }))
     .map(({ label }) => `${label} was not found in PATH.`);
 }
 
-export function getAvailableCliTabs({ env = process.env } = {}) {
-  return CLI_COMMANDS.filter(({ command }) => commandExists(command, { env }));
+export function getAvailableCliTabs({ env = process.env, platform = process.platform } = {}) {
+  return CLI_COMMANDS.filter(({ command }) => commandExists(command, { env, platform }));
 }
 
-export function getMissingCliLabels({ env = process.env } = {}) {
+export function getMissingCliLabels({ env = process.env, platform = process.platform } = {}) {
   return CLI_COMMANDS
-    .filter(({ command }) => !commandExists(command, { env }))
+    .filter(({ command }) => !commandExists(command, { env, platform }))
     .map(({ label }) => label);
 }
 
-export function launchTerminals({ cwd = process.cwd(), env = process.env, tabs = CLI_COMMANDS } = {}) {
-  const child = spawn('wt.exe', buildWtArgs({ cwd, tabs }), {
+export function launchTerminals({ cwd = process.cwd(), env = process.env, platform = process.platform, tabs = CLI_COMMANDS } = {}) {
+  const executable = platform === 'win32' ? 'wt.exe' : 'osascript';
+  const args = platform === 'win32'
+    ? buildWtArgs({ cwd, tabs })
+    : buildMacTerminalArgs({ cwd, tabs });
+
+  const child = spawn(executable, args, {
     cwd,
     env,
     detached: true,
@@ -150,7 +188,8 @@ export function main(args = process.argv.slice(2), options = {}) {
 
   launchTerminals({ ...options, tabs: availableTabs });
   const launched = availableTabs.map(({ title }) => title).join(', ');
-  console.log(`Opened ${launched} in Windows Terminal.`);
+  const terminalName = (options.platform ?? process.platform) === 'win32' ? 'Windows Terminal' : 'Terminal.app';
+  console.log(`Opened ${launched} in ${terminalName}.`);
   return 0;
 }
 

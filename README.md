@@ -1,12 +1,13 @@
 # start-ai-cli
 
-Open Codex CLI, Claude Code, and Cursor CLI from the current directory in one Windows Terminal window.
+Open Codex CLI, Claude Code, and Cursor CLI from the current directory in terminal tabs/windows.
 
 ## Requirements
 
-- Windows
+- Windows or macOS
 - Node.js 18 or newer
-- Windows Terminal available as `wt.exe`
+- Windows Terminal available as `wt.exe` on Windows
+- Terminal.app and `osascript` available on macOS
 - Codex CLI available as `codex`
 - Claude Code CLI available as `claude`
 - Cursor CLI available as `agent`
@@ -31,11 +32,13 @@ Run the command from the project directory you want both tools to use:
 start-ai-cli
 ```
 
-It opens Windows Terminal with three tabs:
+It opens your platform terminal with one session per available tool:
 
 - `Codex`, running `codex`
 - `Claude`, running `claude`
 - `Cursor`, running `agent`
+
+On Windows it uses Windows Terminal. On macOS it uses Terminal.app.
 
 ## Options
 

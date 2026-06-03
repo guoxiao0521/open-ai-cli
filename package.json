@@ -1,7 +1,7 @@
 {
   "name": "start-ai-cli",
   "version": "0.1.0",
-  "description": "Open Codex CLI, Claude Code, and Cursor CLI in Windows Terminal tabs from the current directory.",
+  "description": "Open Codex CLI, Claude Code, and Cursor CLI from the current directory.",
   "type": "module",
   "bin": {
     "start-ai-cli": "bin/start-ai-cli.js"
@@ -22,7 +22,8 @@
     "cursor",
     "cli",
     "terminal",
-    "windows-terminal"
+    "windows-terminal",
+    "macos"
   ],
   "license": "MIT",
   "repository": {
@@ -34,7 +35,8 @@
   },
   "homepage": "https://github.com/guoxiao0521/open-ai-cli#readme",
   "os": [
-    "win32"
+    "win32",
+    "darwin"
   ],
   "engines": {
     "node": ">=18"
