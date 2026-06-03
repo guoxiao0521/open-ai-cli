@@ -17,11 +17,12 @@ test('parseArgs rejects unknown options', () => {
   });
 });
 
-test('buildWtArgs opens Codex and Claude tabs in the requested directory', () => {
+test('buildWtArgs opens Codex, Claude, and Cursor tabs in the requested directory', () => {
   const args = buildWtArgs({
     cwd: 'D:\\repo\\start-ai',
     codexCommand: 'codex-test',
-    claudeCommand: 'claude-test'
+    claudeCommand: 'claude-test',
+    cursorCommand: 'agent-test'
   });
 
   assert.deepEqual(args, [
@@ -43,7 +44,17 @@ test('buildWtArgs opens Codex and Claude tabs in the requested directory', () =>
     'powershell.exe',
     '-NoExit',
     '-Command',
-    'claude-test'
+    'claude-test',
+    ';',
+    'new-tab',
+    '--title',
+    'Cursor',
+    '-d',
+    'D:\\repo\\start-ai',
+    'powershell.exe',
+    '-NoExit',
+    '-Command',
+    'agent-test'
   ]);
 });
 

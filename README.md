@@ -1,6 +1,6 @@
 # open-ai-cli
 
-Open Codex CLI and Claude Code from the current directory in one Windows Terminal window.
+Open Codex CLI, Claude Code, and Cursor CLI from the current directory in one Windows Terminal window.
 
 ## Requirements
 
@@ -9,6 +9,7 @@ Open Codex CLI and Claude Code from the current directory in one Windows Termina
 - Windows Terminal available as `wt.exe`
 - Codex CLI available as `codex`
 - Claude Code CLI available as `claude`
+- Cursor CLI available as `agent`
 
 ## Install
 
@@ -30,10 +31,11 @@ Run the command from the project directory you want both tools to use:
 open-ai-cli
 ```
 
-It opens Windows Terminal with two tabs:
+It opens Windows Terminal with three tabs:
 
 - `Codex`, running `codex`
 - `Claude`, running `claude`
+- `Cursor`, running `agent`
 
 ## Options
 

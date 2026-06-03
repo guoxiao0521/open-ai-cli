@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 const REQUIRED_COMMANDS = [
   { command: 'wt.exe', label: 'Windows Terminal (wt.exe)' },
   { command: 'codex', label: 'Codex CLI (codex)' },
-  { command: 'claude', label: 'Claude Code CLI (claude)' }
+  { command: 'claude', label: 'Claude Code CLI (claude)' },
+  { command: 'agent', label: 'Cursor CLI (agent)' }
 ];
 
 const HELP_TEXT = `Usage:
@@ -16,15 +17,17 @@ const HELP_TEXT = `Usage:
   open-ai-cli --help
   open-ai-cli --version
 
-Opens Windows Terminal with two tabs in the current directory:
+Opens Windows Terminal with three tabs in the current directory:
   - Codex: runs "codex"
   - Claude: runs "claude"
+  - Cursor: runs "agent"
 
 Requirements:
   - Windows
   - Windows Terminal (wt.exe)
   - Codex CLI available as "codex"
   - Claude Code CLI available as "claude"
+  - Cursor CLI available as "agent"
 `;
 
 export function parseArgs(args) {
@@ -50,7 +53,7 @@ export function getPackageVersion() {
   return packageJson.version;
 }
 
-export function buildWtArgs({ cwd, codexCommand = 'codex', claudeCommand = 'claude' }) {
+export function buildWtArgs({ cwd, codexCommand = 'codex', claudeCommand = 'claude', cursorCommand = 'agent' }) {
   return [
     'new-tab',
     '--title',
@@ -70,7 +73,17 @@ export function buildWtArgs({ cwd, codexCommand = 'codex', claudeCommand = 'clau
     'powershell.exe',
     '-NoExit',
     '-Command',
-    claudeCommand
+    claudeCommand,
+    ';',
+    'new-tab',
+    '--title',
+    'Cursor',
+    '-d',
+    cwd,
+    'powershell.exe',
+    '-NoExit',
+    '-Command',
+    cursorCommand
   ];
 }
 
@@ -135,7 +148,7 @@ export function main(args = process.argv.slice(2), options = {}) {
   }
 
   launchTerminals(options);
-  console.log('Opened Codex CLI and Claude Code in Windows Terminal.');
+  console.log('Opened Codex CLI, Claude Code, and Cursor CLI in Windows Terminal.');
   return 0;
 }
 

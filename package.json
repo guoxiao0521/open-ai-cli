@@ -1,7 +1,7 @@
 {
   "name": "open-ai-cli",
   "version": "0.1.0",
-  "description": "Open Codex CLI and Claude Code in Windows Terminal tabs from the current directory.",
+  "description": "Open Codex CLI, Claude Code, and Cursor CLI in Windows Terminal tabs from the current directory.",
   "type": "module",
   "bin": {
     "open-ai-cli": "bin/open-ai-cli.js"
@@ -19,11 +19,20 @@
   "keywords": [
     "codex",
     "claude",
+    "cursor",
     "cli",
     "terminal",
     "windows-terminal"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guoxiao0521/open-ai-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/guoxiao0521/open-ai-cli/issues"
+  },
+  "homepage": "https://github.com/guoxiao0521/open-ai-cli#readme",
   "os": [
     "win32"
   ],
