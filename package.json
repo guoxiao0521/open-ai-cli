@@ -1,10 +1,10 @@
 {
-  "name": "open-ai-cli",
+  "name": "start-ai-cli",
   "version": "0.1.0",
   "description": "Open Codex CLI, Claude Code, and Cursor CLI in Windows Terminal tabs from the current directory.",
   "type": "module",
   "bin": {
-    "open-ai-cli": "bin/open-ai-cli.js"
+    "start-ai-cli": "bin/start-ai-cli.js"
   },
   "scripts": {
     "test": "node --test",

@@ -1,4 +1,4 @@
-# open-ai-cli
+# start-ai-cli
 
 Open Codex CLI, Claude Code, and Cursor CLI from the current directory in one Windows Terminal window.
 
@@ -14,7 +14,7 @@ Open Codex CLI, Claude Code, and Cursor CLI from the current directory in one Wi
 ## Install
 
 ```bash
-npm install -g open-ai-cli
+npm install -g start-ai-cli
 ```
 
 For local development from this directory:
@@ -28,7 +28,7 @@ npm link
 Run the command from the project directory you want both tools to use:
 
 ```bash
-open-ai-cli
+start-ai-cli
 ```
 
 It opens Windows Terminal with three tabs:
@@ -40,8 +40,8 @@ It opens Windows Terminal with three tabs:
 ## Options
 
 ```bash
-open-ai-cli --help
-open-ai-cli --version
+start-ai-cli --help
+start-ai-cli --version
 ```
 
 ## Development

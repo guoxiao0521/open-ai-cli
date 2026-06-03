@@ -5,6 +5,8 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const COMMAND = 'start-ai-cli';
+
 const REQUIRED_COMMANDS = [
   { command: 'wt.exe', label: 'Windows Terminal (wt.exe)' },
   { command: 'codex', label: 'Codex CLI (codex)' },
@@ -13,9 +15,9 @@ const REQUIRED_COMMANDS = [
 ];
 
 const HELP_TEXT = `Usage:
-  open-ai-cli
-  open-ai-cli --help
-  open-ai-cli --version
+  ${COMMAND}
+  ${COMMAND} --help
+  ${COMMAND} --version
 
 Opens Windows Terminal with three tabs in the current directory:
   - Codex: runs "codex"
@@ -134,13 +136,13 @@ export function main(args = process.argv.slice(2), options = {}) {
 
   if (parsed.action === 'error') {
     console.error(parsed.message);
-    console.error('Run "open-ai-cli --help" for usage.');
+    console.error(`Run "${COMMAND} --help" for usage.`);
     return 1;
   }
 
   const missing = getMissingRequirements(options);
   if (missing.length > 0) {
-    console.error('open-ai-cli cannot start:');
+    console.error(`${COMMAND} cannot start:`);
     for (const message of missing) {
       console.error(`- ${message}`);
     }

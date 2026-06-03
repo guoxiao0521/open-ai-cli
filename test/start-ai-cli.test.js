@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { buildWtArgs, getMissingRequirements, isEntrypoint, parseArgs } from '../bin/open-ai-cli.js';
+import { buildWtArgs, getMissingRequirements, isEntrypoint, parseArgs } from '../bin/start-ai-cli.js';
 
 test('parseArgs handles help and version flags', () => {
   assert.deepEqual(parseArgs(['--help']), { action: 'help' });
@@ -63,7 +63,7 @@ test('getMissingRequirements rejects non-Windows platforms before PATH checks', 
 });
 
 test('isEntrypoint accepts resolved script paths', () => {
-  const scriptPath = fileURLToPath(new URL('../bin/open-ai-cli.js', import.meta.url));
+  const scriptPath = fileURLToPath(new URL('../bin/start-ai-cli.js', import.meta.url));
 
   assert.equal(isEntrypoint(scriptPath, pathToFileURL(scriptPath).href), true);
 });
