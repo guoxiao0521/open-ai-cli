@@ -7,11 +7,14 @@ import { fileURLToPath } from 'node:url';
 
 const COMMAND = 'start-ai-cli';
 
-const REQUIRED_COMMANDS = [
-  { command: 'wt.exe', label: 'Windows Terminal (wt.exe)' },
-  { command: 'codex', label: 'Codex CLI (codex)' },
-  { command: 'claude', label: 'Claude Code CLI (claude)' },
-  { command: 'agent', label: 'Cursor CLI (agent)' }
+const HARD_REQUIREMENTS = [
+  { command: 'wt.exe', label: 'Windows Terminal (wt.exe)' }
+];
+
+const CLI_COMMANDS = [
+  { command: 'codex', label: 'Codex CLI (codex)', title: 'Codex' },
+  { command: 'claude', label: 'Claude Code CLI (claude)', title: 'Claude' },
+  { command: 'agent', label: 'Cursor CLI (agent)', title: 'Cursor' }
 ];
 
 const HELP_TEXT = `Usage:
@@ -55,38 +58,13 @@ export function getPackageVersion() {
   return packageJson.version;
 }
 
-export function buildWtArgs({ cwd, codexCommand = 'codex', claudeCommand = 'claude', cursorCommand = 'agent' }) {
-  return [
-    'new-tab',
-    '--title',
-    'Codex',
-    '-d',
-    cwd,
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    codexCommand,
-    ';',
-    'new-tab',
-    '--title',
-    'Claude',
-    '-d',
-    cwd,
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    claudeCommand,
-    ';',
-    'new-tab',
-    '--title',
-    'Cursor',
-    '-d',
-    cwd,
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    cursorCommand
-  ];
+export function buildWtArgs({ cwd, tabs }) {
+  const result = [];
+  for (let i = 0; i < tabs.length; i++) {
+    if (i > 0) result.push(';');
+    result.push('new-tab', '--title', tabs[i].title, '-d', cwd, 'powershell.exe', '-NoExit', '-Command', tabs[i].command);
+  }
+  return result;
 }
 
 export function commandExists(command, { env = process.env } = {}) {
@@ -104,13 +82,23 @@ export function getMissingRequirements({ platform = process.platform, env = proc
     return ['Windows is required.'];
   }
 
-  return REQUIRED_COMMANDS
+  return HARD_REQUIREMENTS
     .filter(({ command }) => !commandExists(command, { env }))
     .map(({ label }) => `${label} was not found in PATH.`);
 }
 
-export function launchTerminals({ cwd = process.cwd(), env = process.env } = {}) {
-  const child = spawn('wt.exe', buildWtArgs({ cwd }), {
+export function getAvailableCliTabs({ env = process.env } = {}) {
+  return CLI_COMMANDS.filter(({ command }) => commandExists(command, { env }));
+}
+
+export function getMissingCliLabels({ env = process.env } = {}) {
+  return CLI_COMMANDS
+    .filter(({ command }) => !commandExists(command, { env }))
+    .map(({ label }) => label);
+}
+
+export function launchTerminals({ cwd = process.cwd(), env = process.env, tabs = CLI_COMMANDS } = {}) {
+  const child = spawn('wt.exe', buildWtArgs({ cwd, tabs }), {
     cwd,
     env,
     detached: true,
@@ -149,8 +137,20 @@ export function main(args = process.argv.slice(2), options = {}) {
     return 1;
   }
 
-  launchTerminals(options);
-  console.log('Opened Codex CLI, Claude Code, and Cursor CLI in Windows Terminal.');
+  const missingClis = getMissingCliLabels(options);
+  for (const label of missingClis) {
+    console.warn(`Warning: ${label} was not found in PATH, skipping.`);
+  }
+
+  const availableTabs = getAvailableCliTabs(options);
+  if (availableTabs.length === 0) {
+    console.error(`${COMMAND} cannot start: no CLI tools found in PATH.`);
+    return 1;
+  }
+
+  launchTerminals({ ...options, tabs: availableTabs });
+  const launched = availableTabs.map(({ title }) => title).join(', ');
+  console.log(`Opened ${launched} in Windows Terminal.`);
   return 0;
 }
 

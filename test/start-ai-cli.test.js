@@ -17,44 +17,37 @@ test('parseArgs rejects unknown options', () => {
   });
 });
 
-test('buildWtArgs opens Codex, Claude, and Cursor tabs in the requested directory', () => {
+test('buildWtArgs opens all tabs in the requested directory', () => {
   const args = buildWtArgs({
     cwd: 'D:\\repo\\start-ai',
-    codexCommand: 'codex-test',
-    claudeCommand: 'claude-test',
-    cursorCommand: 'agent-test'
+    tabs: [
+      { command: 'codex-test', title: 'Codex' },
+      { command: 'claude-test', title: 'Claude' },
+      { command: 'agent-test', title: 'Cursor' }
+    ]
   });
 
   assert.deepEqual(args, [
-    'new-tab',
-    '--title',
-    'Codex',
-    '-d',
-    'D:\\repo\\start-ai',
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    'codex-test',
+    'new-tab', '--title', 'Codex', '-d', 'D:\\repo\\start-ai',
+    'powershell.exe', '-NoExit', '-Command', 'codex-test',
     ';',
-    'new-tab',
-    '--title',
-    'Claude',
-    '-d',
-    'D:\\repo\\start-ai',
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    'claude-test',
+    'new-tab', '--title', 'Claude', '-d', 'D:\\repo\\start-ai',
+    'powershell.exe', '-NoExit', '-Command', 'claude-test',
     ';',
-    'new-tab',
-    '--title',
-    'Cursor',
-    '-d',
-    'D:\\repo\\start-ai',
-    'powershell.exe',
-    '-NoExit',
-    '-Command',
-    'agent-test'
+    'new-tab', '--title', 'Cursor', '-d', 'D:\\repo\\start-ai',
+    'powershell.exe', '-NoExit', '-Command', 'agent-test'
+  ]);
+});
+
+test('buildWtArgs handles a single tab (skipped CLIs scenario)', () => {
+  const args = buildWtArgs({
+    cwd: 'D:\\repo\\start-ai',
+    tabs: [{ command: 'claude-test', title: 'Claude' }]
+  });
+
+  assert.deepEqual(args, [
+    'new-tab', '--title', 'Claude', '-d', 'D:\\repo\\start-ai',
+    'powershell.exe', '-NoExit', '-Command', 'claude-test'
   ]);
 });
 
