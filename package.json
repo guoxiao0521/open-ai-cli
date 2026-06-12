@@ -1,8 +1,10 @@
 {
   "name": "start-ai-cli",
-  "version": "0.1.0",
-  "description": "Open Codex CLI, Claude Code, and Cursor CLI from the current directory.",
+  "version": "0.1.1",
+  "description": "Launch Codex CLI, Claude Code, and Cursor CLI together from one project directory in Windows Terminal or macOS Terminal.",
   "type": "module",
+  "main": "bin/start-ai-cli.js",
+  "exports": "./bin/start-ai-cli.js",
   "bin": {
     "start-ai-cli": "bin/start-ai-cli.js"
   },
@@ -17,14 +19,36 @@
     "LICENSE"
   ],
   "keywords": [
+    "start-ai-cli",
+    "open-ai-cli",
+    "ai-cli",
+    "ai-agent",
+    "ai-coding",
+    "ai-coding-agent",
+    "coding-agent",
     "codex",
+    "codex-cli",
+    "openai-codex",
     "claude",
+    "claude-code",
+    "claude-code-cli",
     "cursor",
+    "cursor-cli",
+    "cursor-agent",
     "cli",
+    "cli-launcher",
+    "developer-tools",
     "terminal",
+    "terminal-tabs",
     "windows-terminal",
-    "macos"
+    "macos",
+    "macos-terminal",
+    "productivity"
   ],
+  "author": {
+    "name": "guoxiao0521",
+    "url": "https://github.com/guoxiao0521"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
