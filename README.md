@@ -7,6 +7,7 @@ Open Codex CLI, Claude Code, and Cursor CLI from the current directory in termin
 - Windows or macOS
 - Node.js 18 or newer
 - Windows Terminal available as `wt.exe` on Windows
+- PowerShell 7 available as `pwsh.exe`, or Windows PowerShell, on Windows
 - Terminal.app and `osascript` available on macOS
 - Codex CLI available as `codex`
 - Claude Code CLI available as `claude`

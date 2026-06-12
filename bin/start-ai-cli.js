@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const COMMAND = 'start-ai-cli';
@@ -18,6 +18,8 @@ const CLI_COMMANDS = [
   { command: 'agent', label: 'Cursor CLI (agent)', title: 'Cursor' }
 ];
 
+const DEFAULT_WINDOWS_SHELL_COMMAND = 'pwsh.exe';
+
 const HELP_TEXT = `Usage:
   ${COMMAND}
   ${COMMAND} --help
@@ -29,7 +31,7 @@ Opens terminal tabs/windows in the current directory:
   - Cursor: runs "agent"
 
 Requirements:
-  - Windows with Windows Terminal (wt.exe), or macOS with Terminal.app
+  - Windows with Windows Terminal (wt.exe) and PowerShell, or macOS with Terminal.app
   - Codex CLI available as "codex"
   - Claude Code CLI available as "claude"
   - Cursor CLI available as "agent"
@@ -58,11 +60,23 @@ export function getPackageVersion() {
   return packageJson.version;
 }
 
-export function buildWtArgs({ cwd, tabs }) {
+export function buildWtArgs({ cwd, tabs, shellCommand = DEFAULT_WINDOWS_SHELL_COMMAND }) {
   const result = [];
   for (let i = 0; i < tabs.length; i++) {
     if (i > 0) result.push(';');
-    result.push('new-tab', '--title', tabs[i].title, '-d', cwd, 'powershell.exe', '-NoExit', '-Command', tabs[i].command);
+    result.push(
+      'new-tab',
+      '--title',
+      tabs[i].title,
+      '-d',
+      cwd,
+      shellCommand,
+      '-NoExit',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      tabs[i].command
+    );
   }
   return result;
 }
@@ -109,15 +123,56 @@ export function commandExists(command, { env = process.env, platform = process.p
   return result.status === 0;
 }
 
+function getSystemWindowsPowerShellPath(env = process.env) {
+  const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
+  if (!systemRoot) {
+    return null;
+  }
+
+  return pathWin32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
+export function getWindowsShellCommand({
+  env = process.env,
+  platform = process.platform,
+  commandExistsFn = commandExists,
+  fileExistsFn = existsSync
+} = {}) {
+  if (platform !== 'win32') {
+    return null;
+  }
+
+  if (commandExistsFn('pwsh.exe', { env, platform })) {
+    return 'pwsh.exe';
+  }
+
+  if (commandExistsFn('powershell.exe', { env, platform })) {
+    return 'powershell.exe';
+  }
+
+  const systemPowerShellPath = getSystemWindowsPowerShellPath(env);
+  if (systemPowerShellPath && fileExistsFn(systemPowerShellPath)) {
+    return systemPowerShellPath;
+  }
+
+  return null;
+}
+
 export function getMissingRequirements({ platform = process.platform, env = process.env } = {}) {
   const requirements = HARD_REQUIREMENTS_BY_PLATFORM[platform];
   if (!requirements) {
     return ['Windows or macOS is required.'];
   }
 
-  return requirements
+  const missing = requirements
     .filter(({ command }) => !commandExists(command, { env, platform }))
     .map(({ label }) => `${label} was not found in PATH.`);
+
+  if (platform === 'win32' && !getWindowsShellCommand({ env, platform })) {
+    missing.push('PowerShell (pwsh.exe or powershell.exe) was not found.');
+  }
+
+  return missing;
 }
 
 export function getAvailableCliTabs({ env = process.env, platform = process.platform } = {}) {
@@ -132,8 +187,13 @@ export function getMissingCliLabels({ env = process.env, platform = process.plat
 
 export function launchTerminals({ cwd = process.cwd(), env = process.env, platform = process.platform, tabs = CLI_COMMANDS } = {}) {
   const executable = platform === 'win32' ? 'wt.exe' : 'osascript';
+  const shellCommand = platform === 'win32' ? getWindowsShellCommand({ env, platform }) : undefined;
+  if (platform === 'win32' && !shellCommand) {
+    throw new Error('PowerShell (pwsh.exe or powershell.exe) was not found.');
+  }
+
   const args = platform === 'win32'
-    ? buildWtArgs({ cwd, tabs })
+    ? buildWtArgs({ cwd, tabs, shellCommand })
     : buildMacTerminalArgs({ cwd, tabs });
 
   const child = spawn(executable, args, {

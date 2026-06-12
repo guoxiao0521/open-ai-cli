@@ -8,6 +8,7 @@ import {
   buildMacTerminalScript,
   buildWtArgs,
   getMissingRequirements,
+  getWindowsShellCommand,
   isEntrypoint,
   parseArgs
 } from '../bin/start-ai-cli.js';
@@ -36,13 +37,13 @@ test('buildWtArgs opens all tabs in the requested directory', () => {
 
   assert.deepEqual(args, [
     'new-tab', '--title', 'Codex', '-d', 'D:\\repo\\start-ai',
-    'powershell.exe', '-NoExit', '-Command', 'codex-test',
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'codex-test',
     ';',
     'new-tab', '--title', 'Claude', '-d', 'D:\\repo\\start-ai',
-    'powershell.exe', '-NoExit', '-Command', 'claude-test',
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'claude-test',
     ';',
     'new-tab', '--title', 'Cursor', '-d', 'D:\\repo\\start-ai',
-    'powershell.exe', '-NoExit', '-Command', 'agent-test'
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'agent-test'
   ]);
 });
 
@@ -54,7 +55,25 @@ test('buildWtArgs handles a single tab (skipped CLIs scenario)', () => {
 
   assert.deepEqual(args, [
     'new-tab', '--title', 'Claude', '-d', 'D:\\repo\\start-ai',
-    'powershell.exe', '-NoExit', '-Command', 'claude-test'
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'claude-test'
+  ]);
+});
+
+test('buildWtArgs uses the requested Windows shell command', () => {
+  const args = buildWtArgs({
+    cwd: 'D:\\repo\\start-ai',
+    shellCommand: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    tabs: [{ command: 'codex-test', title: 'Codex' }]
+  });
+
+  assert.deepEqual(args, [
+    'new-tab', '--title', 'Codex', '-d', 'D:\\repo\\start-ai',
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    '-NoExit',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    'codex-test'
   ]);
 });
 
@@ -101,6 +120,35 @@ test('getMissingRequirements checks macOS hard requirements', () => {
   assert.deepEqual(getMissingRequirements({ platform: 'darwin', env: { PATH: '' } }), [
     'AppleScript runner (osascript) was not found in PATH.'
   ]);
+});
+
+test('getMissingRequirements checks Windows terminal and shell requirements', () => {
+  assert.deepEqual(getMissingRequirements({ platform: 'win32', env: { PATH: '' } }), [
+    'Windows Terminal (wt.exe) was not found in PATH.',
+    'PowerShell (pwsh.exe or powershell.exe) was not found.'
+  ]);
+});
+
+test('getWindowsShellCommand prefers PowerShell 7 when available', () => {
+  const shell = getWindowsShellCommand({
+    platform: 'win32',
+    env: {},
+    commandExistsFn: (command) => command === 'pwsh.exe',
+    fileExistsFn: () => false
+  });
+
+  assert.equal(shell, 'pwsh.exe');
+});
+
+test('getWindowsShellCommand falls back to the system Windows PowerShell path', () => {
+  const shell = getWindowsShellCommand({
+    platform: 'win32',
+    env: { SystemRoot: 'C:\\Windows' },
+    commandExistsFn: () => false,
+    fileExistsFn: (path) => path === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+  });
+
+  assert.equal(shell, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
 });
 
 test('isEntrypoint accepts resolved script paths', () => {
