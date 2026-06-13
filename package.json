@@ -1,7 +1,7 @@
 {
   "name": "start-ai-cli",
   "version": "0.1.1",
-  "description": "Launch Codex CLI, Claude Code, and Cursor CLI together from one project directory in Windows Terminal or macOS Terminal.",
+  "description": "Launch selected Codex CLI, Claude Code, and Cursor CLI tools from one project directory in Windows Terminal or macOS Terminal.",
   "type": "module",
   "main": "bin/start-ai-cli.js",
   "exports": "./bin/start-ai-cli.js",
@@ -62,8 +62,15 @@
     "win32",
     "darwin"
   ],
+  "dependencies": {
+    "ink": "^7.0.6",
+    "react": "^19.2.7"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
