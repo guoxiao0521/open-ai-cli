@@ -64,6 +64,7 @@ On Windows, `start-ai-cli` uses Windows Terminal (`wt.exe`) with PowerShell. On 
 ```bash
 start-ai-cli
 start-ai-cli --all
+start-ai-cli --last
 start-ai-cli --no-interactive
 start-ai-cli --help
 start-ai-cli --version
@@ -71,7 +72,7 @@ start-ai-cli --version
 
 By default, `start-ai-cli` opens an interactive selector. Use Up/Down to move, Space to enable or disable an available CLI, Enter to open the selected tools, or `q`/Esc to cancel. Missing CLIs are shown as unavailable and cannot be selected.
 
-Use `--all` or `--no-interactive` in scripts and automation to launch every available CLI without prompting.
+Use `--all` or `--no-interactive` in scripts and automation to launch every available CLI without prompting. Use `--last` to launch the saved CLI selection and saved launch flags without prompting.
 
 ## Global Config
 
@@ -85,7 +86,12 @@ The config stores enabled tool ids:
 
 ```json
 {
-  "enabledClis": ["codex", "claude", "cursor"]
+  "enabledClis": ["codex", "claude", "cursor"],
+  "cliArgs": {
+    "codex": ["--yolo"],
+    "claude": ["--dangerously-skip-permissions"],
+    "cursor": []
+  }
 }
 ```
 

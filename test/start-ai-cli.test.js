@@ -39,15 +39,23 @@ test('parseArgs handles help and version flags', () => {
 });
 
 test('parseArgs uses interactive mode by default and supports non-interactive launch', () => {
-  assert.deepEqual(parseArgs([]), { action: 'open', interactive: true });
-  assert.deepEqual(parseArgs(['--all']), { action: 'open', interactive: false });
-  assert.deepEqual(parseArgs(['--no-interactive']), { action: 'open', interactive: false });
+  assert.deepEqual(parseArgs([]), { action: 'open', interactive: true, useSavedSelection: false });
+  assert.deepEqual(parseArgs(['--all']), { action: 'open', interactive: false, useSavedSelection: false });
+  assert.deepEqual(parseArgs(['--no-interactive']), { action: 'open', interactive: false, useSavedSelection: false });
+  assert.deepEqual(parseArgs(['--last']), { action: 'open', interactive: false, useSavedSelection: true });
 });
 
 test('parseArgs rejects unknown options', () => {
   assert.deepEqual(parseArgs(['--bad-option']), {
     action: 'error',
     message: 'Unknown option: --bad-option'
+  });
+});
+
+test('parseArgs rejects conflicting non-interactive launch modes', () => {
+  assert.deepEqual(parseArgs(['--all', '--last']), {
+    action: 'error',
+    message: 'Cannot combine --last with --all or --no-interactive.'
   });
 });
 
@@ -547,6 +555,63 @@ test('main launches --all with saved cliArgs from config', async () => {
     assert.deepEqual(codexTab.extraArgs, ['--yolo']);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test('main launches saved CLI selection when --last is used', async () => {
+  const originalLog = console.log;
+  const logs = [];
+  let launchedTabs = [];
+  console.log = (message) => logs.push(message);
+
+  try {
+    const exitCode = await main(['--last'], {
+      platform: 'darwin',
+      env: {},
+      commandExistsFn: () => true,
+      readFileFn: () => JSON.stringify({
+        enabledClis: ['codex', 'cursor'],
+        cliArgs: { codex: ['--yolo'], claude: ['--dangerously-skip-permissions'], cursor: [] }
+      }),
+      launchTerminalsFn: ({ tabs }) => {
+        launchedTabs = tabs;
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(launchedTabs.map(({ id }) => id), ['codex', 'cursor']);
+    assert.deepEqual(launchedTabs.map(({ extraArgs }) => extraArgs), [['--yolo'], []]);
+    assert.equal(logs.at(-1), 'Opened Codex, Cursor in Terminal.app.');
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test('main refuses --last when no saved CLI tools are available', async () => {
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  const errors = [];
+  let launched = false;
+  console.error = (message) => errors.push(message);
+  console.warn = () => {};
+
+  try {
+    const exitCode = await main(['--last'], {
+      platform: 'darwin',
+      env: {},
+      commandExistsFn: (command) => command === 'codex' || command === 'osascript',
+      readFileFn: () => JSON.stringify({ enabledClis: ['claude'], cliArgs: {} }),
+      launchTerminalsFn: () => {
+        launched = true;
+      }
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(launched, false);
+    assert.match(errors.join('\n'), /no saved CLI tools are available/);
+  } finally {
+    console.error = originalError;
+    console.warn = originalWarn;
   }
 });
 

@@ -38,6 +38,7 @@ const EMPTY_SELECTION_MESSAGE = 'Select at least one available CLI.';
 const HELP_TEXT = `Usage:
   ${COMMAND}
   ${COMMAND} --all
+  ${COMMAND} --last
   ${COMMAND} --help
   ${COMMAND} --version
 
@@ -48,6 +49,7 @@ Interactively choose which CLI tools to open in the current directory:
 
 Options:
   --all, --no-interactive  Open every available CLI without prompting
+  --last                   Open the saved CLI selection without prompting
   --help, -h              Show this help
   --version, -v           Show the package version
 
@@ -67,14 +69,23 @@ export function parseArgs(args) {
     return { action: 'version' };
   }
 
-  const nonInteractive = args.includes('--all') || args.includes('--no-interactive');
-  const known = new Set(['--all', '--no-interactive']);
+  const launchAll = args.includes('--all') || args.includes('--no-interactive');
+  const launchLast = args.includes('--last');
+  const known = new Set(['--all', '--no-interactive', '--last']);
   const unknown = args.filter((arg) => arg.startsWith('-') && !known.has(arg));
   if (unknown.length > 0) {
     return { action: 'error', message: `Unknown option: ${unknown.join(', ')}` };
   }
 
-  return { action: 'open', interactive: !nonInteractive };
+  if (launchAll && launchLast) {
+    return { action: 'error', message: 'Cannot combine --last with --all or --no-interactive.' };
+  }
+
+  return {
+    action: 'open',
+    interactive: !launchAll && !launchLast,
+    useSavedSelection: launchLast
+  };
 }
 
 export function getPackageVersion() {
@@ -765,6 +776,14 @@ export async function main(args = process.argv.slice(2), options = {}) {
   const config = readConfig(options);
   let tabsToLaunch = availableTabs;
   let cliArgs = config.cliArgs;
+
+  if (parsed.useSavedSelection) {
+    tabsToLaunch = filterTabsByEnabledCliIds(availableTabs, config.enabledClis);
+    if (tabsToLaunch.length === 0) {
+      console.error(`${COMMAND} cannot start: no saved CLI tools are available.`);
+      return 1;
+    }
+  }
 
   if (parsed.interactive) {
     const input = options.input ?? process.stdin;
