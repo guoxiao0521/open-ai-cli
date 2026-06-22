@@ -21,6 +21,16 @@ const CLI_COMMANDS = [
   { id: 'cursor', command: 'agent', label: 'Cursor CLI (agent)', title: 'Cursor' }
 ];
 
+const CLI_FLAG_PRESETS = {
+  codex: [
+    { flag: '--yolo', description: 'Full auto mode, skip all confirmations' }
+  ],
+  claude: [
+    { flag: '--dangerously-skip-permissions', description: 'Full access, skip permission checks' }
+  ],
+  cursor: []
+};
+
 const DEFAULT_WINDOWS_SHELL_COMMAND = 'pwsh.exe';
 const DEFAULT_ENABLED_CLI_IDS = CLI_COMMANDS.map(({ id }) => id);
 const EMPTY_SELECTION_MESSAGE = 'Select at least one available CLI.';
@@ -93,6 +103,15 @@ export function normalizeEnabledCliIds(enabledCliIds, cliCommands = CLI_COMMANDS
   return normalized;
 }
 
+export function normalizeCliArgs(cliArgs) {
+  const result = {};
+  for (const { id } of CLI_COMMANDS) {
+    const args = cliArgs?.[id];
+    result[id] = Array.isArray(args) ? args.filter((a) => typeof a === 'string') : [];
+  }
+  return result;
+}
+
 export function readConfig({
   configPath = getConfigPath(),
   readFileFn = readFileSync
@@ -100,11 +119,13 @@ export function readConfig({
   try {
     const config = JSON.parse(readFileFn(configPath, 'utf8'));
     return {
-      enabledClis: normalizeEnabledCliIds(config.enabledClis)
+      enabledClis: normalizeEnabledCliIds(config.enabledClis),
+      cliArgs: normalizeCliArgs(config.cliArgs)
     };
   } catch {
     return {
-      enabledClis: [...DEFAULT_ENABLED_CLI_IDS]
+      enabledClis: [...DEFAULT_ENABLED_CLI_IDS],
+      cliArgs: normalizeCliArgs(null)
     };
   }
 }
@@ -112,11 +133,13 @@ export function readConfig({
 export function writeConfig({
   configPath = getConfigPath(),
   enabledClis,
+  cliArgs,
   mkdirFn = mkdirSync,
   writeFileFn = writeFileSync
 } = {}) {
   const config = {
-    enabledClis: normalizeEnabledCliIds(enabledClis)
+    enabledClis: normalizeEnabledCliIds(enabledClis),
+    cliArgs: normalizeCliArgs(cliArgs)
   };
   mkdirFn(dirname(configPath), { recursive: true });
   writeFileFn(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
@@ -396,10 +419,151 @@ export async function promptForEnabledCliIds({
   });
 }
 
+export function buildFlagItems(selectedCliIds) {
+  const items = [];
+  for (const id of selectedCliIds) {
+    const presets = CLI_FLAG_PRESETS[id] ?? [];
+    for (const { flag, description } of presets) {
+      items.push({ cliId: id, flag, description });
+    }
+  }
+  return items;
+}
+
+export function createFlagSelectionState({ flagItems, defaultCliArgs }) {
+  const selected = {};
+  for (const { cliId, flag } of flagItems) {
+    if (!selected[cliId]) {
+      selected[cliId] = new Set();
+    }
+    const savedArgs = defaultCliArgs?.[cliId] ?? [];
+    if (savedArgs.includes(flag)) {
+      selected[cliId].add(flag);
+    }
+  }
+  return { cursorIndex: 0, selected };
+}
+
+export function FlagSelectionPrompt({
+  flagItems,
+  defaultCliArgs,
+  onSubmit,
+  onCancel
+}) {
+  const { exit } = useApp();
+  const [state, setState] = useState(() => createFlagSelectionState({ flagItems, defaultCliArgs }));
+
+  useInput((input, key) => {
+    if (key.upArrow) {
+      setState((s) => ({ ...s, cursorIndex: Math.max(0, s.cursorIndex - 1) }));
+      return;
+    }
+
+    if (key.downArrow) {
+      setState((s) => ({ ...s, cursorIndex: Math.min(flagItems.length - 1, s.cursorIndex + 1) }));
+      return;
+    }
+
+    if (input === ' ') {
+      setState((s) => {
+        const item = flagItems[s.cursorIndex];
+        const newSelected = { ...s.selected };
+        const set = new Set(newSelected[item.cliId] ?? []);
+        if (set.has(item.flag)) {
+          set.delete(item.flag);
+        } else {
+          set.add(item.flag);
+        }
+        newSelected[item.cliId] = set;
+        return { ...s, selected: newSelected };
+      });
+      return;
+    }
+
+    if (key.return) {
+      const cliArgs = {};
+      for (const [cliId, flags] of Object.entries(state.selected)) {
+        cliArgs[cliId] = [...flags];
+      }
+      onSubmit(cliArgs);
+      exit();
+      return;
+    }
+
+    if (input === 'q' || key.escape) {
+      onCancel();
+      exit();
+    }
+  });
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    React.createElement(Text, { bold: true }, 'Configure launch flags'),
+    ...flagItems.map((item, index) => {
+      const focused = index === state.cursorIndex;
+      const marker = focused ? '>' : ' ';
+      const checked = state.selected[item.cliId]?.has(item.flag) ? '[x]' : '[ ]';
+      const color = focused ? 'cyan' : undefined;
+
+      return React.createElement(
+        Text,
+        { key: `${item.cliId}:${item.flag}`, color },
+        `${marker} ${checked} ${item.cliId}: ${item.flag} — ${item.description}`
+      );
+    }),
+    React.createElement(
+      Text,
+      { dimColor: true },
+      'Use Up/Down to move, Space to toggle, Enter to confirm, q/Esc to cancel.'
+    )
+  );
+}
+
+export async function promptForCliArgs({
+  input = process.stdin,
+  output = process.stdout,
+  flagItems,
+  defaultCliArgs,
+  renderFn = render
+}) {
+  return new Promise((resolve, reject) => {
+    let app;
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      callback(value);
+      app?.unmount();
+    };
+
+    app = renderFn(
+      React.createElement(FlagSelectionPrompt, {
+        flagItems,
+        defaultCliArgs,
+        onSubmit: (cliArgs) => settle(resolve, cliArgs),
+        onCancel: () => settle(reject, new CliSelectionCancelledError())
+      }),
+      {
+        stdin: input,
+        stdout: output,
+        stderr: output,
+        exitOnCtrlC: false
+      }
+    );
+  });
+}
+
 export function buildWtArgs({ cwd, tabs, shellCommand = DEFAULT_WINDOWS_SHELL_COMMAND }) {
   const result = [];
   for (let i = 0; i < tabs.length; i++) {
     if (i > 0) result.push(';');
+    const cmd = tabs[i].extraArgs?.length > 0
+      ? `${tabs[i].command} ${tabs[i].extraArgs.join(' ')}`
+      : tabs[i].command;
     result.push(
       'new-tab',
       '--title',
@@ -411,7 +575,7 @@ export function buildWtArgs({ cwd, tabs, shellCommand = DEFAULT_WINDOWS_SHELL_CO
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      tabs[i].command
+      cmd
     );
   }
   return result;
@@ -426,7 +590,10 @@ function appleScriptQuote(value) {
 }
 
 export function buildMacTerminalScript({ cwd, tabs }) {
-  const commands = tabs.map(({ command }) => `cd ${shellQuote(cwd)} && ${command}`);
+  const commands = tabs.map(({ command, extraArgs }) => {
+    const fullCmd = extraArgs?.length > 0 ? `${command} ${extraArgs.join(' ')}` : command;
+    return `cd ${shellQuote(cwd)} && ${fullCmd}`;
+  });
   const lines = [
     'tell application "Terminal"',
     '  activate'
@@ -595,7 +762,10 @@ export async function main(args = process.argv.slice(2), options = {}) {
     return 1;
   }
 
+  const config = readConfig(options);
   let tabsToLaunch = availableTabs;
+  let cliArgs = config.cliArgs;
+
   if (parsed.interactive) {
     const input = options.input ?? process.stdin;
     const output = options.output ?? process.stdout;
@@ -605,7 +775,6 @@ export async function main(args = process.argv.slice(2), options = {}) {
       return 1;
     }
 
-    const config = readConfig(options);
     let enabledClis;
     try {
       enabledClis = await promptForEnabledCliIds({
@@ -624,21 +793,47 @@ export async function main(args = process.argv.slice(2), options = {}) {
       throw error;
     }
 
-    try {
-      writeConfig({ ...options, enabledClis });
-    } catch (error) {
-      console.warn(`Warning: could not save CLI selection: ${error.message}`);
-    }
-
     tabsToLaunch = filterTabsByEnabledCliIds(availableTabs, enabledClis);
     if (tabsToLaunch.length === 0) {
       console.error(`${COMMAND} cannot start: no selected CLI tools are available.`);
       return 1;
     }
+
+    const flagItems = buildFlagItems(tabsToLaunch.map((t) => t.id));
+    if (flagItems.length > 0) {
+      try {
+        const selectedArgs = await promptForCliArgs({
+          input,
+          output,
+          flagItems,
+          defaultCliArgs: config.cliArgs,
+          renderFn: options.renderFn
+        });
+        cliArgs = { ...config.cliArgs, ...selectedArgs };
+      } catch (error) {
+        if (error instanceof CliSelectionCancelledError) {
+          console.error(`${COMMAND} cancelled.`);
+          return 1;
+        }
+
+        throw error;
+      }
+    }
+
+    try {
+      writeConfig({ ...options, enabledClis, cliArgs });
+    } catch (error) {
+      console.warn(`Warning: could not save CLI selection: ${error.message}`);
+    }
   }
 
+  const tabsWithArgs = tabsToLaunch.map((tab) => ({
+    ...tab,
+    extraArgs: cliArgs?.[tab.id] ?? []
+  }));
+
   const launchTerminalsFn = options.launchTerminalsFn ?? launchTerminals;
-  launchTerminalsFn({ ...options, tabs: tabsToLaunch });
+  launchTerminalsFn({ ...options, tabs: tabsWithArgs });
   const launched = tabsToLaunch.map(({ title }) => title).join(', ');
   const terminalName = (options.platform ?? process.platform) === 'win32' ? 'Windows Terminal' : 'Terminal.app';
   console.log(`Opened ${launched} in ${terminalName}.`);

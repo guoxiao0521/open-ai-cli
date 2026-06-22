@@ -6,13 +6,16 @@ import { render as renderInk } from 'ink-testing-library';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  buildFlagItems,
   buildMacTerminalArgs,
   buildMacTerminalScript,
   buildWtArgs,
   CliSelectionPrompt,
   confirmCliSelection,
   createCliSelectionState,
+  createFlagSelectionState,
   filterTabsByEnabledCliIds,
+  FlagSelectionPrompt,
   getAvailableTabsFromInspection,
   getConfigPath,
   getMissingRequirements,
@@ -22,6 +25,7 @@ import {
   isEntrypoint,
   main,
   moveCliSelectionCursor,
+  normalizeCliArgs,
   normalizeEnabledCliIds,
   parseArgs,
   readConfig,
@@ -60,13 +64,40 @@ test('normalizeEnabledCliIds defaults to all tools and filters invalid ids', () 
   assert.deepEqual(normalizeEnabledCliIds([]), []);
 });
 
+test('normalizeCliArgs defaults to empty arrays and ignores unknown keys', () => {
+  assert.deepEqual(normalizeCliArgs(null), { codex: [], claude: [], cursor: [] });
+  assert.deepEqual(normalizeCliArgs({ codex: ['--yolo'], unknown: ['x'] }), {
+    codex: ['--yolo'],
+    claude: [],
+    cursor: []
+  });
+  assert.deepEqual(normalizeCliArgs({ claude: ['--dangerously-skip-permissions'] }), {
+    codex: [],
+    claude: ['--dangerously-skip-permissions'],
+    cursor: []
+  });
+});
+
 test('readConfig returns saved selections and falls back to defaults on bad config', () => {
+  const emptyCLiArgs = { codex: [], claude: [], cursor: [] };
+
   assert.deepEqual(
     readConfig({
       configPath: '/tmp/config.json',
       readFileFn: () => JSON.stringify({ enabledClis: ['cursor', 'bad'] })
     }),
-    { enabledClis: ['cursor'] }
+    { enabledClis: ['cursor'], cliArgs: emptyCLiArgs }
+  );
+
+  assert.deepEqual(
+    readConfig({
+      configPath: '/tmp/config.json',
+      readFileFn: () => JSON.stringify({
+        enabledClis: ['codex'],
+        cliArgs: { codex: ['--yolo'] }
+      })
+    }),
+    { enabledClis: ['codex'], cliArgs: { codex: ['--yolo'], claude: [], cursor: [] } }
   );
 
   assert.deepEqual(
@@ -76,24 +107,31 @@ test('readConfig returns saved selections and falls back to defaults on bad conf
         throw new Error('missing');
       }
     }),
-    { enabledClis: ['codex', 'claude', 'cursor'] }
+    { enabledClis: ['codex', 'claude', 'cursor'], cliArgs: emptyCLiArgs }
   );
 });
 
-test('writeConfig persists normalized selections', () => {
+test('writeConfig persists normalized selections and cliArgs', () => {
   const calls = [];
   const config = writeConfig({
     configPath: '/tmp/start-ai-cli/config.json',
     enabledClis: ['claude', 'bad', 'claude'],
+    cliArgs: { claude: ['--dangerously-skip-permissions'], unknown: ['x'] },
     mkdirFn: (...args) => calls.push(['mkdir', ...args]),
     writeFileFn: (...args) => calls.push(['write', ...args])
   });
 
-  assert.deepEqual(config, { enabledClis: ['claude'] });
+  assert.deepEqual(config, {
+    enabledClis: ['claude'],
+    cliArgs: { codex: [], claude: ['--dangerously-skip-permissions'], cursor: [] }
+  });
   assert.deepEqual(calls[0], ['mkdir', '/tmp/start-ai-cli', { recursive: true }]);
   assert.equal(calls[1][0], 'write');
   assert.equal(calls[1][1], '/tmp/start-ai-cli/config.json');
-  assert.deepEqual(JSON.parse(calls[1][2]), { enabledClis: ['claude'] });
+  assert.deepEqual(JSON.parse(calls[1][2]), {
+    enabledClis: ['claude'],
+    cliArgs: { codex: [], claude: ['--dangerously-skip-permissions'], cursor: [] }
+  });
   assert.equal(calls[1][3], 'utf8');
 });
 
@@ -234,6 +272,50 @@ test('CliSelectionPrompt renders available and disabled CLI states', () => {
   app.unmount();
 });
 
+test('buildFlagItems returns preset flags only for CLIs that have them', () => {
+  assert.deepEqual(buildFlagItems(['codex', 'cursor']), [
+    { cliId: 'codex', flag: '--yolo', description: 'Full auto mode, skip all confirmations' }
+  ]);
+  assert.deepEqual(buildFlagItems(['claude']), [
+    { cliId: 'claude', flag: '--dangerously-skip-permissions', description: 'Full access, skip permission checks' }
+  ]);
+  assert.deepEqual(buildFlagItems(['cursor']), []);
+});
+
+test('createFlagSelectionState defaults from saved cliArgs', () => {
+  const flagItems = [
+    { cliId: 'codex', flag: '--yolo', description: 'Full auto mode' },
+    { cliId: 'claude', flag: '--dangerously-skip-permissions', description: 'Full access' }
+  ];
+
+  const state = createFlagSelectionState({
+    flagItems,
+    defaultCliArgs: { codex: ['--yolo'], claude: [], cursor: [] }
+  });
+
+  assert.equal(state.cursorIndex, 0);
+  assert.equal(state.selected.codex.has('--yolo'), true);
+  assert.equal(state.selected.claude?.has('--dangerously-skip-permissions') ?? false, false);
+});
+
+test('FlagSelectionPrompt renders flag items with check state', () => {
+  const flagItems = [
+    { cliId: 'codex', flag: '--yolo', description: 'Full auto mode, skip all confirmations' }
+  ];
+
+  const app = renderInk(React.createElement(FlagSelectionPrompt, {
+    flagItems,
+    defaultCliArgs: { codex: ['--yolo'], claude: [], cursor: [] },
+    onSubmit: () => {},
+    onCancel: () => {}
+  }));
+
+  const frame = app.lastFrame();
+  assert.match(frame, /Configure launch flags/);
+  assert.match(frame, /\[x\] codex: --yolo/);
+  app.unmount();
+});
+
 test('buildWtArgs opens all tabs in the requested directory', () => {
   const args = buildWtArgs({
     cwd: 'D:\\repo\\start-ai',
@@ -253,6 +335,24 @@ test('buildWtArgs opens all tabs in the requested directory', () => {
     ';',
     'new-tab', '--title', 'Cursor', '-d', 'D:\\repo\\start-ai',
     'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'agent-test'
+  ]);
+});
+
+test('buildWtArgs appends extraArgs to the command', () => {
+  const args = buildWtArgs({
+    cwd: 'D:\\repo\\start-ai',
+    tabs: [
+      { command: 'codex', title: 'Codex', extraArgs: ['--yolo'] },
+      { command: 'claude', title: 'Claude', extraArgs: ['--dangerously-skip-permissions'] }
+    ]
+  });
+
+  assert.deepEqual(args, [
+    'new-tab', '--title', 'Codex', '-d', 'D:\\repo\\start-ai',
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'codex --yolo',
+    ';',
+    'new-tab', '--title', 'Claude', '-d', 'D:\\repo\\start-ai',
+    'pwsh.exe', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'claude --dangerously-skip-permissions'
   ]);
 });
 
@@ -302,6 +402,17 @@ test('buildMacTerminalScript opens commands in the requested directory', () => {
     '  do script "cd \'/Users/test/my project\' && claude-test"',
     'end tell'
   ].join('\n'));
+});
+
+test('buildMacTerminalScript appends extraArgs to commands', () => {
+  const script = buildMacTerminalScript({
+    cwd: "/Users/test/project",
+    tabs: [
+      { command: 'codex', extraArgs: ['--yolo'] }
+    ]
+  });
+
+  assert.match(script, /cd '\/Users\/test\/project' && codex --yolo/);
 });
 
 test('buildMacTerminalArgs passes the AppleScript to osascript', () => {
@@ -389,7 +500,7 @@ test('main refuses default interactive mode in non-interactive terminals', async
 test('main launches all available CLIs without prompting when --all is used', async () => {
   const originalLog = console.log;
   const logs = [];
-  let launchedIds = [];
+  let launchedTabs = [];
   console.log = (message) => logs.push(message);
 
   try {
@@ -397,26 +508,56 @@ test('main launches all available CLIs without prompting when --all is used', as
       platform: 'darwin',
       env: {},
       commandExistsFn: () => true,
+      readFileFn: () => { throw new Error('no config'); },
       launchTerminalsFn: ({ tabs }) => {
-        launchedIds = tabs.map(({ id }) => id);
+        launchedTabs = tabs;
       }
     });
 
     assert.equal(exitCode, 0);
-    assert.deepEqual(launchedIds, ['codex', 'claude', 'cursor']);
+    assert.deepEqual(launchedTabs.map(({ id }) => id), ['codex', 'claude', 'cursor']);
+    assert.deepEqual(launchedTabs.map(({ extraArgs }) => extraArgs), [[], [], []]);
     assert.equal(logs.at(-1), 'Opened Codex, Claude, Cursor in Terminal.app.');
   } finally {
     console.log = originalLog;
   }
 });
 
-test('main prompts, saves the selection, and launches selected available CLIs', async () => {
+test('main launches --all with saved cliArgs from config', async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  let launchedTabs = [];
+
+  try {
+    const exitCode = await main(['--all'], {
+      platform: 'darwin',
+      env: {},
+      commandExistsFn: () => true,
+      readFileFn: () => JSON.stringify({
+        enabledClis: ['codex'],
+        cliArgs: { codex: ['--yolo'], claude: [], cursor: [] }
+      }),
+      launchTerminalsFn: ({ tabs }) => {
+        launchedTabs = tabs;
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    const codexTab = launchedTabs.find(({ id }) => id === 'codex');
+    assert.deepEqual(codexTab.extraArgs, ['--yolo']);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test('main prompts for CLIs then flags, saves both, and launches with args', async () => {
   const originalLog = console.log;
   const logs = [];
   const writes = [];
-  let launchedIds = [];
+  let launchedTabs = [];
   let unmounted = false;
   let renderedDefaultEnabledCliIds = [];
+  let renderCallCount = 0;
   console.log = (message) => logs.push(message);
 
   try {
@@ -431,31 +572,41 @@ test('main prompts, saves the selection, and launches selected available CLIs', 
       mkdirFn: () => {},
       writeFileFn: (...args) => writes.push(args),
       renderFn: (element) => {
-        renderedDefaultEnabledCliIds = element.props.defaultEnabledCliIds;
-        queueMicrotask(() => element.props.onSubmit(['codex', 'cursor']));
-        return {
-          unmount: () => {
-            unmounted = true;
-          }
-        };
+        renderCallCount++;
+        if (renderCallCount === 1) {
+          // CLI selection step
+          renderedDefaultEnabledCliIds = element.props.defaultEnabledCliIds;
+          queueMicrotask(() => element.props.onSubmit(['codex', 'cursor']));
+        } else {
+          // Flag selection step — select --yolo for codex
+          queueMicrotask(() => element.props.onSubmit({ codex: ['--yolo'] }));
+          unmounted = true;
+        }
+        return { unmount: () => {} };
       },
       launchTerminalsFn: ({ tabs }) => {
-        launchedIds = tabs.map(({ id }) => id);
+        launchedTabs = tabs;
       }
     });
 
     assert.equal(exitCode, 0);
     assert.equal(unmounted, true);
     assert.deepEqual(renderedDefaultEnabledCliIds, ['claude']);
-    assert.deepEqual(JSON.parse(writes[0][1]), { enabledClis: ['codex', 'cursor'] });
-    assert.deepEqual(launchedIds, ['codex', 'cursor']);
+
+    const writtenConfig = JSON.parse(writes[0][1]);
+    assert.deepEqual(writtenConfig.enabledClis, ['codex', 'cursor']);
+    assert.deepEqual(writtenConfig.cliArgs.codex, ['--yolo']);
+
+    assert.deepEqual(launchedTabs.map(({ id }) => id), ['codex', 'cursor']);
+    const codexTab = launchedTabs.find(({ id }) => id === 'codex');
+    assert.deepEqual(codexTab.extraArgs, ['--yolo']);
     assert.equal(logs.at(-1), 'Opened Codex, Cursor in Terminal.app.');
   } finally {
     console.log = originalLog;
   }
 });
 
-test('main cancels interactive launch without saving or opening terminals', async () => {
+test('main cancels at CLI selection without saving or opening terminals', async () => {
   const originalError = console.error;
   const errors = [];
   const writes = [];
@@ -476,6 +627,48 @@ test('main cancels interactive launch without saving or opening terminals', asyn
         return {
           unmount: () => {}
         };
+      },
+      launchTerminalsFn: () => {
+        launched = true;
+      }
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(launched, false);
+    assert.deepEqual(writes, []);
+    assert.match(errors.join('\n'), /start-ai-cli cancelled/);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test('main cancels at flag selection without saving or opening terminals', async () => {
+  const originalError = console.error;
+  const errors = [];
+  const writes = [];
+  let launched = false;
+  let renderCallCount = 0;
+  console.error = (message) => errors.push(message);
+
+  try {
+    const exitCode = await main([], {
+      platform: 'darwin',
+      env: {},
+      commandExistsFn: () => true,
+      input: { isTTY: true },
+      output: { isTTY: true, write: () => {} },
+      readFileFn: () => JSON.stringify({ enabledClis: ['codex'] }),
+      writeFileFn: (...args) => writes.push(args),
+      renderFn: (element) => {
+        renderCallCount++;
+        if (renderCallCount === 1) {
+          // CLI selection — submit with codex (which has flag presets)
+          queueMicrotask(() => element.props.onSubmit(['codex']));
+        } else {
+          // Flag selection — cancel
+          queueMicrotask(() => element.props.onCancel());
+        }
+        return { unmount: () => {} };
       },
       launchTerminalsFn: () => {
         launched = true;
