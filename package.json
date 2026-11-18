@@ -1,6 +1,6 @@
 {
   "name": "start-ai-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Launch selected Codex CLI, Claude Code, and Cursor CLI tools from one project directory in Windows Terminal or macOS Terminal.",
   "type": "module",
   "main": "bin/start-ai-cli.js",
