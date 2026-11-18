@@ -39,6 +39,8 @@ const HELP_TEXT = `Usage:
   ${COMMAND}
   ${COMMAND} --all
   ${COMMAND} --last
+  ${COMMAND} --last --display 2
+  ${COMMAND} --list-displays
   ${COMMAND} --help
   ${COMMAND} --version
 
@@ -48,10 +50,12 @@ Interactively choose which CLI tools to open in the current directory:
   - Cursor: runs "agent"
 
 Options:
-  --all, --no-interactive  Open every available CLI without prompting
+  --all, --no-interactive   Open every available CLI without prompting
   --last                   Open the saved CLI selection without prompting
-  --help, -h              Show this help
-  --version, -v           Show the package version
+  --display <number>       Open a new window on the selected display (Windows)
+  --list-displays           List active displays and their numbers (Windows)
+  --help, -h               Show this help
+  --version, -v            Show the package version
 
 Requirements:
   - Windows with Windows Terminal (wt.exe) and PowerShell, or macOS with Terminal.app
@@ -69,10 +73,30 @@ export function parseArgs(args) {
     return { action: 'version' };
   }
 
-  const launchAll = args.includes('--all') || args.includes('--no-interactive');
-  const launchLast = args.includes('--last');
+  if (args.includes('--list-displays')) {
+    return args.length === 1
+      ? { action: 'list-displays' }
+      : { action: 'error', message: 'Use --list-displays on its own.' };
+  }
+
+  const launchArgs = [...args];
+  let displayNumber;
+  const displayIndex = launchArgs.indexOf('--display');
+  if (displayIndex !== -1) {
+    const [, value] = launchArgs.splice(displayIndex, 2);
+    displayNumber = Number(value);
+    if (!/^[1-9]\d*$/.test(value ?? '') || !Number.isSafeInteger(displayNumber)) {
+      return { action: 'error', message: '--display requires a positive display number.' };
+    }
+    if (launchArgs.includes('--display')) {
+      return { action: 'error', message: 'Specify --display only once.' };
+    }
+  }
+
+  const launchAll = launchArgs.includes('--all') || launchArgs.includes('--no-interactive');
+  const launchLast = launchArgs.includes('--last');
   const known = new Set(['--all', '--no-interactive', '--last']);
-  const unknown = args.filter((arg) => arg.startsWith('-') && !known.has(arg));
+  const unknown = launchArgs.filter((arg) => arg.startsWith('-') && !known.has(arg));
   if (unknown.length > 0) {
     return { action: 'error', message: `Unknown option: ${unknown.join(', ')}` };
   }
@@ -84,7 +108,8 @@ export function parseArgs(args) {
   return {
     action: 'open',
     interactive: !launchAll && !launchLast,
-    useSavedSelection: launchLast
+    useSavedSelection: launchLast,
+    ...(displayNumber === undefined ? {} : { displayNumber })
   };
 }
 
@@ -568,8 +593,10 @@ export async function promptForCliArgs({
   });
 }
 
-export function buildWtArgs({ cwd, tabs, shellCommand = DEFAULT_WINDOWS_SHELL_COMMAND }) {
-  const result = [];
+export function buildWtArgs({ cwd, tabs, shellCommand = DEFAULT_WINDOWS_SHELL_COMMAND, display }) {
+  const result = display
+    ? ['--window', 'new', '--pos', `${display.x},${display.y}`]
+    : [];
   for (let i = 0; i < tabs.length; i++) {
     if (i > 0) result.push(';');
     const cmd = tabs[i].extraArgs?.length > 0
@@ -672,6 +699,41 @@ export function getWindowsShellCommand({
   return null;
 }
 
+function getWindowsDisplays({
+  env = process.env,
+  commandExistsFn = commandExists
+} = {}) {
+  const shellCommand = getWindowsShellCommand({ env, platform: 'win32', commandExistsFn });
+  if (!shellCommand) {
+    throw new Error('PowerShell (pwsh.exe or powershell.exe) was not found.');
+  }
+
+  const script = readFileSync(new URL('./list-windows-displays.ps1', import.meta.url), 'utf8');
+  const result = spawnSync(shellCommand, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    env,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10000
+  });
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message || result.stderr?.trim() || `exit code ${result.status}`;
+    throw new Error(`Could not detect displays: ${detail}`);
+  }
+
+  const displays = JSON.parse(result.stdout);
+  if (displays.length === 0) {
+    throw new Error('No active displays were found.');
+  }
+
+  return displays;
+}
+
+function formatDisplayList(displays) {
+  return displays.map(({ primary, width, height }, index) =>
+    `  ${index + 1}  ${width}x${height}${primary ? ' (primary)' : ''}`
+  ).join('\n');
+}
+
 export function getMissingRequirements({
   platform = process.platform,
   env = process.env,
@@ -711,7 +773,7 @@ export function getMissingCliLabels({
     .map(({ label }) => label);
 }
 
-export function launchTerminals({ cwd = process.cwd(), env = process.env, platform = process.platform, tabs = CLI_COMMANDS } = {}) {
+export function launchTerminals({ cwd = process.cwd(), env = process.env, platform = process.platform, tabs = CLI_COMMANDS, display } = {}) {
   const executable = platform === 'win32' ? 'wt.exe' : 'osascript';
   const shellCommand = platform === 'win32' ? getWindowsShellCommand({ env, platform }) : undefined;
   if (platform === 'win32' && !shellCommand) {
@@ -719,7 +781,7 @@ export function launchTerminals({ cwd = process.cwd(), env = process.env, platfo
   }
 
   const args = platform === 'win32'
-    ? buildWtArgs({ cwd, tabs, shellCommand })
+    ? buildWtArgs({ cwd, tabs, shellCommand, display })
     : buildMacTerminalArgs({ cwd, tabs });
 
   const child = spawn(executable, args, {
@@ -752,6 +814,19 @@ export async function main(args = process.argv.slice(2), options = {}) {
     return 1;
   }
 
+  const platform = options.platform ?? process.platform;
+  const listDisplays = parsed.action === 'list-displays';
+  const getDisplays = options.getWindowsDisplaysFn ?? getWindowsDisplays;
+  if ((listDisplays || parsed.displayNumber !== undefined) && platform !== 'win32') {
+    console.error('--display and --list-displays are only supported on Windows.');
+    return 1;
+  }
+
+  if (listDisplays) {
+    console.log(`Available displays:\n${formatDisplayList(getDisplays(options))}`);
+    return 0;
+  }
+
   const missing = getMissingRequirements(options);
   if (missing.length > 0) {
     console.error(`${COMMAND} cannot start:`);
@@ -776,6 +851,7 @@ export async function main(args = process.argv.slice(2), options = {}) {
   const config = readConfig(options);
   let tabsToLaunch = availableTabs;
   let cliArgs = config.cliArgs;
+  let enabledClis;
 
   if (parsed.useSavedSelection) {
     tabsToLaunch = filterTabsByEnabledCliIds(availableTabs, config.enabledClis);
@@ -794,7 +870,6 @@ export async function main(args = process.argv.slice(2), options = {}) {
       return 1;
     }
 
-    let enabledClis;
     try {
       enabledClis = await promptForEnabledCliIds({
         input,
@@ -838,7 +913,19 @@ export async function main(args = process.argv.slice(2), options = {}) {
         throw error;
       }
     }
+  }
 
+  let display;
+  if (parsed.displayNumber !== undefined) {
+    const displays = getDisplays(options);
+    display = displays[parsed.displayNumber - 1];
+    if (!display) {
+      console.error(`Display ${parsed.displayNumber} is unavailable. Available displays:\n${formatDisplayList(displays)}`);
+      return 1;
+    }
+  }
+
+  if (parsed.interactive) {
     try {
       writeConfig({ ...options, enabledClis, cliArgs });
     } catch (error) {
@@ -852,10 +939,11 @@ export async function main(args = process.argv.slice(2), options = {}) {
   }));
 
   const launchTerminalsFn = options.launchTerminalsFn ?? launchTerminals;
-  launchTerminalsFn({ ...options, tabs: tabsWithArgs });
+  launchTerminalsFn({ ...options, tabs: tabsWithArgs, display });
   const launched = tabsToLaunch.map(({ title }) => title).join(', ');
-  const terminalName = (options.platform ?? process.platform) === 'win32' ? 'Windows Terminal' : 'Terminal.app';
-  console.log(`Opened ${launched} in ${terminalName}.`);
+  const terminalName = platform === 'win32' ? 'Windows Terminal' : 'Terminal.app';
+  const location = display ? ` on display ${parsed.displayNumber}` : '';
+  console.log(`Opened ${launched} in ${terminalName}${location}.`);
   return 0;
 }
 

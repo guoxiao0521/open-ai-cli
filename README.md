@@ -65,6 +65,8 @@ On Windows, `start-ai-cli` uses Windows Terminal (`wt.exe`) with PowerShell. On 
 start-ai-cli
 start-ai-cli --all
 start-ai-cli --last
+start-ai-cli --list-displays
+start-ai-cli --last --display 2
 start-ai-cli --no-interactive
 start-ai-cli --help
 start-ai-cli --version
@@ -73,6 +75,14 @@ start-ai-cli --version
 By default, `start-ai-cli` opens an interactive selector. Use Up/Down to move, Space to enable or disable an available CLI, Enter to open the selected tools, or `q`/Esc to cancel. Missing CLIs are shown as unavailable and cannot be selected.
 
 Use `--all` or `--no-interactive` in scripts and automation to launch every available CLI without prompting. Use `--last` to launch the saved CLI selection and saved launch flags without prompting.
+
+### Launch on a second display (Windows)
+
+Run `start-ai-cli --list-displays` to see the available numbers and resolutions. The primary display is numbered 1. With two active displays, the secondary display is numbered 2. Use the displayed numbers when the monitor layout changes.
+
+Run `start-ai-cli --last --display 2` from your IDE terminal to open the saved CLIs in a new Windows Terminal window on display 2. Each CLI gets a tab in the same window and starts in the current project directory. Use `start-ai-cli --display 2` to choose the CLIs interactively, or combine `--display 2` with `--all` to launch all available CLIs.
+
+The display number applies to the current launch. If that display is unavailable, the command lists the available displays and exits before opening a terminal.
 
 ## Global Config
 

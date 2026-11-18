@@ -59,6 +59,28 @@ test('parseArgs rejects conflicting non-interactive launch modes', () => {
   });
 });
 
+test('parseArgs accepts a display with each launch mode', () => {
+  assert.deepEqual(parseArgs(['--list-displays']), { action: 'list-displays' });
+  assert.deepEqual(parseArgs(['--display', '2']), {
+    action: 'open', interactive: true, useSavedSelection: false, displayNumber: 2
+  });
+  assert.deepEqual(parseArgs(['--last', '--display', '2']), {
+    action: 'open', interactive: false, useSavedSelection: true, displayNumber: 2
+  });
+  assert.deepEqual(parseArgs(['--display', '2', '--all']), {
+    action: 'open', interactive: false, useSavedSelection: false, displayNumber: 2
+  });
+});
+
+test('parseArgs rejects missing, invalid or conflicting display options', () => {
+  for (const value of [undefined, '--all', '0', '-2', '2.5', '2e1', '9007199254740992']) {
+    const args = value === undefined ? ['--display'] : ['--display', value];
+    assert.match(parseArgs(args).message, /requires a positive display number/);
+  }
+  assert.match(parseArgs(['--display', '1', '--display', '2']).message, /only once/);
+  assert.match(parseArgs(['--list-displays', '--last']).message, /on its own/);
+});
+
 test('getConfigPath resolves the global config file under the user home directory', () => {
   assert.equal(
     getConfigPath({ homeDirectory: 'tester' }).replaceAll('\\', '/').endsWith('tester/.start-ai-cli/config.json'),
@@ -346,6 +368,18 @@ test('buildWtArgs opens all tabs in the requested directory', () => {
   ]);
 });
 
+test('buildWtArgs sends all tabs to a new window at the requested coordinates', () => {
+  const launch = {
+    cwd: 'C:\\project',
+    tabs: [{ title: 'Codex', command: 'codex' }, { title: 'Claude', command: 'claude' }]
+  };
+
+  assert.deepEqual(buildWtArgs({ ...launch, display: { x: -1280, y: -400 } }), [
+    '--window', 'new', '--pos', '-1280,-400',
+    ...buildWtArgs(launch)
+  ]);
+});
+
 test('buildWtArgs appends extraArgs to the command', () => {
   const args = buildWtArgs({
     cwd: 'D:\\repo\\start-ai',
@@ -477,6 +511,69 @@ test('getWindowsShellCommand falls back to the system Windows PowerShell path', 
   });
 
   assert.equal(shell, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+});
+
+const primaryDisplay = { primary: true, width: 1920, height: 1080, x: 16, y: 16 };
+const secondaryDisplay = { primary: false, width: 1440, height: 900, x: -1424, y: 16 };
+
+test('main lists displays without checking for terminal or CLI commands', async (t) => {
+  const log = t.mock.method(console, 'log', () => {});
+
+  assert.equal(await main(['--list-displays'], {
+    platform: 'win32',
+    getWindowsDisplaysFn: () => [primaryDisplay, secondaryDisplay],
+    commandExistsFn: () => assert.fail('Unexpected command lookup')
+  }), 0);
+  assert.equal(log.mock.calls[0].arguments[0], 'Available displays:\n  1  1920x1080 (primary)\n  2  1440x900');
+});
+
+test('main opens saved CLIs on the requested Windows display', async (t) => {
+  const log = t.mock.method(console, 'log', () => {});
+  const launch = t.mock.fn();
+
+  assert.equal(await main(['--last', '--display', '2'], {
+    platform: 'win32',
+    commandExistsFn: () => true,
+    readFileFn: () => JSON.stringify({
+      enabledClis: ['claude', 'cursor'],
+      cliArgs: { claude: ['--some-flag'] }
+    }),
+    getWindowsDisplaysFn: () => [primaryDisplay, secondaryDisplay],
+    launchTerminalsFn: launch
+  }), 0);
+  const { tabs, display } = launch.mock.calls[0].arguments[0];
+  assert.deepEqual(tabs.map(({ id, extraArgs }) => [id, extraArgs]), [
+    ['claude', ['--some-flag']], ['cursor', []]
+  ]);
+  assert.equal(display, secondaryDisplay);
+  assert.match(log.mock.calls[0].arguments[0], /on display 2/);
+});
+
+test('main refuses to launch when the selected display is unavailable', async (t) => {
+  const error = t.mock.method(console, 'error', () => {});
+  const launch = t.mock.fn();
+
+  assert.equal(await main(['--all', '--display', '2'], {
+    platform: 'win32',
+    commandExistsFn: () => true,
+    readFileFn: () => '{}',
+    getWindowsDisplaysFn: () => [primaryDisplay],
+    launchTerminalsFn: launch
+  }), 1);
+  assert.equal(launch.mock.callCount(), 0);
+  assert.match(error.mock.calls[0].arguments[0], /Display 2 is unavailable.*\n  1  1920x1080 \(primary\)/);
+});
+
+test('main reports that display options require Windows', async (t) => {
+  const error = t.mock.method(console, 'error', () => {});
+  const options = {
+    platform: 'darwin',
+    commandExistsFn: () => assert.fail('Unexpected command lookup')
+  };
+
+  assert.equal(await main(['--list-displays'], options), 1);
+  assert.equal(await main(['--last', '--display', '2'], options), 1);
+  assert.match(error.mock.calls[0].arguments[0], /only supported on Windows/);
 });
 
 test('main refuses default interactive mode in non-interactive terminals', async () => {
