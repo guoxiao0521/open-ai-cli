@@ -59,6 +59,11 @@ test('parseArgs rejects conflicting non-interactive launch modes', () => {
   });
 });
 
+test('parseArgs accepts --update as a standalone action', () => {
+  assert.deepEqual(parseArgs(['--update']), { action: 'update' });
+  assert.match(parseArgs(['--update', '--all']).message, /on its own/);
+});
+
 test('parseArgs accepts a display with each launch mode', () => {
   assert.deepEqual(parseArgs(['--list-displays']), { action: 'list-displays' });
   assert.deepEqual(parseArgs(['--display', '2']), {
@@ -515,6 +520,58 @@ test('getWindowsShellCommand falls back to the system Windows PowerShell path', 
 
 const primaryDisplay = { primary: true, width: 1920, height: 1080, x: 16, y: 16 };
 const secondaryDisplay = { primary: false, width: 1440, height: 900, x: -1424, y: 16 };
+
+test('main updates all installed Windows CLIs in order even if one fails', async (t) => {
+  t.mock.method(console, 'log', () => {});
+  const error = t.mock.method(console, 'error', () => {});
+  const run = t.mock.fn((_executable, args) => ({ status: args[2] === 'codex' ? 2 : 0 }));
+  const env = { PATH: 'C:\\tools' };
+  const cwd = 'C:\\project';
+
+  assert.equal(await main(['--update'], {
+    platform: 'win32',
+    cwd,
+    env,
+    input: { isTTY: false },
+    output: { isTTY: false },
+    commandExistsFn: (command, { pathOnly }) => {
+      assert.ok(['codex', 'claude', 'agent'].includes(command));
+      assert.equal(pathOnly, true);
+      return true;
+    },
+    spawnSyncFn: run,
+    launchTerminalsFn: () => assert.fail('Unexpected terminal launch')
+  }), 1);
+  const spawnOptions = { cwd, env: { ...env, NoDefaultCurrentDirectoryInExePath: '1' }, stdio: 'inherit' };
+  assert.deepEqual(run.mock.calls.map(({ arguments: args }) => args), [
+    ['cmd.exe', ['/d', '/c', 'codex', 'update'], spawnOptions],
+    ['cmd.exe', ['/d', '/c', 'claude', 'update'], spawnOptions],
+    ['cmd.exe', ['/d', '/c', 'agent', 'update'], spawnOptions]
+  ]);
+  assert.match(error.mock.calls[0].arguments[0], /Failed to update Codex: exit code 2/);
+});
+
+test('main skips missing macOS CLIs and fails if none are available', async (t) => {
+  t.mock.method(console, 'log', () => {});
+  const warn = t.mock.method(console, 'warn', () => {});
+  const error = t.mock.method(console, 'error', () => {});
+  const run = t.mock.fn(() => ({ status: 0 }));
+  const options = { platform: 'darwin', spawnSyncFn: run };
+
+  assert.equal(await main(['--update'], {
+    ...options,
+    commandExistsFn: (command) => command === 'agent'
+  }), 0);
+  assert.deepEqual(run.mock.calls[0].arguments.slice(0, 2), ['sh', ['-lc', "exec 'agent' update"]]);
+  assert.deepEqual(warn.mock.calls.map(({ arguments: [message] }) => message), [
+    'Warning: Codex CLI (codex) was not found in PATH, skipping.',
+    'Warning: Claude Code CLI (claude) was not found in PATH, skipping.'
+  ]);
+
+  assert.equal(await main(['--update'], { ...options, commandExistsFn: () => false }), 1);
+  assert.equal(run.mock.callCount(), 1);
+  assert.match(error.mock.calls[0].arguments[0], /cannot update: no CLI tools found/);
+});
 
 test('main lists displays without checking for terminal or CLI commands', async (t) => {
   const log = t.mock.method(console, 'log', () => {});

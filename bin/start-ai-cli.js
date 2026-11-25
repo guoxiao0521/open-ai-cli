@@ -41,6 +41,7 @@ const HELP_TEXT = `Usage:
   ${COMMAND} --last
   ${COMMAND} --last --display 2
   ${COMMAND} --list-displays
+  ${COMMAND} --update
   ${COMMAND} --help
   ${COMMAND} --version
 
@@ -54,6 +55,7 @@ Options:
   --last                   Open the saved CLI selection without prompting
   --display <number>       Open a new window on the selected display (Windows)
   --list-displays           List active displays and their numbers (Windows)
+  --update                  Update every available CLI in the current terminal
   --help, -h               Show this help
   --version, -v            Show the package version
 
@@ -77,6 +79,12 @@ export function parseArgs(args) {
     return args.length === 1
       ? { action: 'list-displays' }
       : { action: 'error', message: 'Use --list-displays on its own.' };
+  }
+
+  if (args.includes('--update')) {
+    return args.length === 1
+      ? { action: 'update' }
+      : { action: 'error', message: 'Use --update on its own.' };
   }
 
   const launchArgs = [...args];
@@ -649,10 +657,14 @@ export function buildMacTerminalArgs({ cwd, tabs }) {
   return ['-e', buildMacTerminalScript({ cwd, tabs })];
 }
 
-export function commandExists(command, { env = process.env, platform = process.platform } = {}) {
+export function commandExists(command, {
+  env = process.env,
+  platform = process.platform,
+  pathOnly = false
+} = {}) {
   const executable = platform === 'win32' ? 'where.exe' : 'sh';
   const args = platform === 'win32'
-    ? [command]
+    ? [pathOnly ? `$PATH:${command}` : command]
     : ['-lc', `command -v ${shellQuote(command)}`];
 
   const result = spawnSync(executable, args, {
@@ -773,6 +785,49 @@ export function getMissingCliLabels({
     .map(({ label }) => label);
 }
 
+function updateClis({
+  cwd = process.cwd(),
+  env = process.env,
+  platform = process.platform,
+  commandExistsFn = commandExists,
+  spawnSyncFn = spawnSync
+} = {}) {
+  const inspectedClis = inspectCliCommands({
+    env,
+    platform,
+    commandExistsFn: (command, options) => commandExistsFn(command, { ...options, pathOnly: true })
+  });
+  const availableClis = getAvailableTabsFromInspection(inspectedClis);
+  for (const label of getMissingLabelsFromInspection(inspectedClis)) {
+    console.warn(`Warning: ${label} was not found in PATH, skipping.`);
+  }
+  if (availableClis.length === 0) {
+    console.error(`${COMMAND} cannot update: no CLI tools found in PATH.`);
+    return 1;
+  }
+
+  let exitCode = 0;
+  const windows = platform === 'win32';
+  const executable = windows ? env.ComSpec ?? env.COMSPEC ?? 'cmd.exe' : 'sh';
+  const updateEnv = windows ? { ...env, NoDefaultCurrentDirectoryInExePath: '1' } : env;
+  for (const { command, title } of availableClis) {
+    console.log(`Updating ${title} (${command} update)...`);
+    const args = windows
+      ? ['/d', '/c', command, 'update']
+      : ['-lc', `exec ${shellQuote(command)} update`];
+    const result = spawnSyncFn(executable, args, { cwd, env: updateEnv, stdio: 'inherit' });
+    if (result.signal === 'SIGINT') {
+      return 130;
+    }
+    if (result.error || result.status !== 0) {
+      const detail = result.error?.message ?? (result.signal || `exit code ${result.status}`);
+      console.error(`Failed to update ${title}: ${detail}.`);
+      exitCode = 1;
+    }
+  }
+  return exitCode;
+}
+
 export function launchTerminals({ cwd = process.cwd(), env = process.env, platform = process.platform, tabs = CLI_COMMANDS, display } = {}) {
   const executable = platform === 'win32' ? 'wt.exe' : 'osascript';
   const shellCommand = platform === 'win32' ? getWindowsShellCommand({ env, platform }) : undefined;
@@ -812,6 +867,10 @@ export async function main(args = process.argv.slice(2), options = {}) {
     console.error(parsed.message);
     console.error(`Run "${COMMAND} --help" for usage.`);
     return 1;
+  }
+
+  if (parsed.action === 'update') {
+    return updateClis(options);
   }
 
   const platform = options.platform ?? process.platform;

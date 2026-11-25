@@ -17,6 +17,7 @@ npx start-ai-cli
 - Interactively chooses which Codex CLI, Claude Code CLI, and Cursor CLI tools to launch.
 - Remembers your enabled tools in a global config file for the next run.
 - Opens each available tool in its own Windows Terminal tab or macOS Terminal window.
+- Updates installed Codex CLI, Claude Code, and Cursor CLI with one command.
 - Skips missing CLIs instead of failing when at least one supported tool is available.
 - Works as a global npm command or one-off `npx` command.
 
@@ -68,6 +69,7 @@ start-ai-cli --last
 start-ai-cli --list-displays
 start-ai-cli --last --display 2
 start-ai-cli --no-interactive
+start-ai-cli --update
 start-ai-cli --help
 start-ai-cli --version
 ```
@@ -75,6 +77,10 @@ start-ai-cli --version
 By default, `start-ai-cli` opens an interactive selector. Use Up/Down to move, Space to enable or disable an available CLI, Enter to open the selected tools, or `q`/Esc to cancel. Missing CLIs are shown as unavailable and cannot be selected.
 
 Use `--all` or `--no-interactive` in scripts and automation to launch every available CLI without prompting. Use `--last` to launch the saved CLI selection and saved launch flags without prompting.
+
+### Update installed CLIs
+
+Run `start-ai-cli --update` on its own to run `codex update`, `claude update`, and `agent update` in the current terminal. It skips commands missing from `PATH` and continues with the remaining tools if an update fails. The command exits with a nonzero status if any update fails or no supported CLI is found.
 
 ### Launch on a second display (Windows)
 
